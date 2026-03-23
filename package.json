@@ -1,0 +1,30 @@
+{
+  "name": "feishu-codex-bridge-kit",
+  "version": "0.1.0",
+  "description": "Hardened Feishu/Codex bridge kit extracted from Claude-to-IM with override-based patches and diagnostics",
+  "type": "module",
+  "scripts": {
+    "apply-overrides": "node scripts/apply-upstream-overrides.js",
+    "build": "npm run apply-overrides && node scripts/build.js",
+    "typecheck": "npm run apply-overrides && tsc --noEmit",
+    "dev": "tsx src/main.ts",
+    "test": "npm run apply-overrides && CTI_HOME=$(mktemp -d) node --test --import tsx --test-timeout=15000 src/__tests__/*.test.ts",
+    "postinstall": "node scripts/apply-upstream-overrides.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.62",
+    "claude-to-im": "github:op7418/claude-to-im"
+  },
+  "optionalDependencies": {
+    "@openai/codex-sdk": "^0.110.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
