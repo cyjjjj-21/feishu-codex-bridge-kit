@@ -43,6 +43,14 @@ build_env_dict() {
     dict+="${indent}<key>${var}</key>\n${indent}<string>${val}</string>\n"
   done
 
+  # Forward explicit proxy env vars for runtimes that do not read macOS
+  # system proxy settings automatically (for example Codex SDK subprocesses).
+  for var in HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy; do
+    local val="${!var:-}"
+    [ -z "$val" ] && continue
+    dict+="${indent}<key>${var}</key>\n${indent}<string>${val}</string>\n"
+  done
+
   # Forward CTI_* vars
   while IFS='=' read -r name val; do
     case "$name" in CTI_*)

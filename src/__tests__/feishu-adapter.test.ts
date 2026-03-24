@@ -176,6 +176,28 @@ describe('FeishuAdapter outbound attachments', () => {
     assert.equal(imageMessage.data?.content, JSON.stringify({ image_key: 'image-key-1' }));
   });
 
+  it('uploads a desktop screenshot when the basename is embedded in the common saved-to-desktop label', async () => {
+    const screenshotName = `saved-to-desktop-${Date.now()}.png`;
+    const screenshotPath = path.join(os.homedir(), 'Desktop', screenshotName);
+    tempArtifacts.push(screenshotPath);
+    fs.writeFileSync(screenshotPath, 'fake png payload');
+
+    const { adapter, messageCreates, fileCreates } = await createMockAdapter();
+    const result = await adapter.send({
+      address: { channelType: 'feishu', chatId: 'chat-saved-to-desktop' },
+      text: `截图已经拿到了，保存在桌面：${screenshotName}\n图里是 FaceTime 的预览窗口。`,
+      parseMode: 'Markdown',
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(fileCreates.length, 0, 'Saved-to-desktop screenshots should use image upload');
+    assert.equal(messageCreates.length, 2, 'Should send one text message and one image message');
+
+    const imageMessage = messageCreates[1] as { data?: { msg_type?: string; content?: string } };
+    assert.equal(imageMessage.data?.msg_type, 'image');
+    assert.equal(imageMessage.data?.content, JSON.stringify({ image_key: 'image-key-1' }));
+  });
+
   it('uploads an inline markdown screenshot link after a prose label', async () => {
     const screenshotName = `face-time-inline-${Date.now()}.png`;
     const screenshotPath = path.join(os.homedir(), 'Desktop', screenshotName);

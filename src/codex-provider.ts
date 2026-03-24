@@ -75,6 +75,12 @@ function resolveCodexPathOverride(): string | undefined {
   return undefined;
 }
 
+function shouldDisableMcpServersForBridge(): boolean {
+  const raw = process.env.CTI_CODEX_DISABLE_MCP;
+  if (!raw) return true;
+  return !/^(?:0|false|no|off)$/i.test(raw.trim());
+}
+
 function getSandboxMode(): string | undefined {
   const value = process.env.CTI_CODEX_SANDBOX_MODE?.trim();
   if (!value) return undefined;
@@ -131,6 +137,14 @@ function shouldRetryFreshStart(message: string): boolean {
   );
 }
 
+function getMaxFreshRetryAttempts(): number {
+  const raw = process.env.CTI_CODEX_FRESH_RETRIES?.trim();
+  if (!raw) return 2;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return 2;
+  return Math.min(parsed, 6);
+}
+
 function summarizeCommand(command: string): string {
   const normalized = command.trim().replace(/\s+/g, ' ');
   if (!normalized) return 'command';
@@ -183,12 +197,15 @@ export class CodexProvider implements LLMProvider {
       || undefined;
     const baseUrl = process.env.CTI_CODEX_BASE_URL || undefined;
     const codexPathOverride = resolveCodexPathOverride();
+    const disableMcpServers = shouldDisableMcpServersForBridge();
+    const codexConfig = disableMcpServers ? { mcp_servers: {} } : undefined;
 
     const CodexClass = this.sdk.Codex;
     this.codex = new CodexClass({
       ...(apiKey ? { apiKey } : {}),
       ...(baseUrl ? { baseUrl } : {}),
       ...(codexPathOverride ? { codexPathOverride } : {}),
+      ...(codexConfig ? { config: codexConfig } : {}),
     });
 
     return { sdk: this.sdk, codex: this.codex };
@@ -266,7 +283,8 @@ export class CodexProvider implements LLMProvider {
               input = promptText;
             }
 
-            let retryFresh = false;
+            const maxFreshRetries = getMaxFreshRetryAttempts();
+            let freshRetryAttempts = 0;
 
             while (true) {
               let thread: ThreadInstance;
@@ -363,7 +381,7 @@ export class CodexProvider implements LLMProvider {
                 const message = err instanceof Error ? err.message : String(err);
                 shouldResetRuntime = true;
                 const canRetryFresh =
-                  !retryFresh
+                  freshRetryAttempts < maxFreshRetries
                   && (!sawAnyEvent || !hasMeaningfulProgress)
                   && (
                     (savedThreadId ? shouldRetryFreshThread(message) : shouldRetryFreshStart(message))
@@ -371,9 +389,12 @@ export class CodexProvider implements LLMProvider {
 
                 if (canRetryFresh) {
                   const reason = savedThreadId ? 'Resume failed' : 'Fresh start failed';
-                  console.warn(`[codex-provider] ${reason}, retrying once with a fresh thread:`, message);
+                  freshRetryAttempts += 1;
+                  console.warn(
+                    `[codex-provider] ${reason}, retrying with a fresh thread (${freshRetryAttempts}/${maxFreshRetries}):`,
+                    message,
+                  );
                   savedThreadId = undefined;
-                  retryFresh = true;
                   continue;
                 }
                 throw err;

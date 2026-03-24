@@ -638,15 +638,27 @@ function isSkipMessage(text: string): boolean {
 }
 
 function isRestartStatusQuery(text: string): boolean {
-  const normalized = normalizeIntentText(text);
+  const normalized = normalizeIntentText(text)
+    // Group chats can prepend @mentions before short pings.
+    .replace(/(?:^|\s)@[^\s@]+/g, ' ')
+    // Drop common punctuation/quotes so "在吗？"/"ping!" still match.
+    .replace(/[，。！？、!?,.:;；~～`'"“”‘’()（）[\]{}<>《》【】]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!normalized) return false;
-  if (normalized.length > 20) return false;
-  return /^(?:在吗|还在吗|你还在吗|hello|hi|ping|恢复了吗|好了吗|ok了吗|重启好了吗)$/.test(normalized);
+  if (normalized.length > 24) return false;
+  const collapsed = normalized.replace(/\s+/g, '');
+  return /^(?:在吗|还在吗|你还在吗|你在吗|在不在|你好|您好|嗨|哈喽|hello|hi|hey|ping|areyouthere|youthere|恢复了吗|好了吗|ok了吗|重启好了吗)$/.test(collapsed);
 }
 
 function detectManualIntervention(text: string): { reason: string; resumeHint: string } | null {
   const normalized = normalizeIntentText(text);
   if (!normalized) return null;
+
+  // MCP server OAuth/bootstrap failures are infrastructure errors, not
+  // user-facing manual login steps in the current bridge conversation.
+  const mcpAuthNoisePattern = /(authrequired\(|oauth-protected-resource|authorization_uri=.*oauth-authorization-server|mcp\.[a-z0-9.-]+)/i;
+  if (mcpAuthNoisePattern.test(normalized)) return null;
 
   const authPattern = /(log[\s-]?in|sign[\s-]?in|authenticate|authentication|authorize|authorization|oauth|2fa|two[- ]factor|verification code|captcha|sso|consent|browser login|登录|扫码|验证码|二次验证|二步验证|授权|认证|人机验证)/i;
   const manualPattern = /(manual|manually|by hand|手动|在电脑上|在浏览器里|完成后回复|reply ["']?continue["']?|回复["“]?继续["”]?)/i;
@@ -1207,8 +1219,28 @@ async function handleMessage(
       if (msg.updateId != null && adapter.acknowledgeUpdate) {
         adapter.acknowledgeUpdate(msg.updateId);
       }
+      // Reply only once after a restart to avoid repeatedly short-circuiting
+      // normal conversations on consecutive "在吗"/"ping" messages.
+      managerState.recentBridgeRestarts.delete(msg.address.chatId);
       return;
     }
+  }
+
+  // Generic health pings should be answered locally instead of invoking Codex.
+  // This avoids occasional upstream startup noise for messages like "在吗"/"ping".
+  if (isRestartStatusQuery(msg.text) && !msg.attachments?.length) {
+    await deliver(adapter, {
+      address: msg.address,
+      text: '在的，我在线。你可以直接发任务，我继续处理。',
+      parseMode: 'plain',
+      replyToMessageId: msg.messageId,
+    }, {
+      dedupKey: `bridge-health-ping:${msg.address.channelType}:${msg.address.chatId}:${msg.messageId}`,
+    });
+    if (msg.updateId != null && adapter.acknowledgeUpdate) {
+      adapter.acknowledgeUpdate(msg.updateId);
+    }
+    return;
   }
 
   // Update lastMessageAt for this adapter

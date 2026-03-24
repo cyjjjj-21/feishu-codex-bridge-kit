@@ -537,6 +537,59 @@ describe('CodexProvider', () => {
     assert.ok(!errorEvent, 'Retry success should not emit error');
     assert.ok(resultEvent, 'Retry success should emit result');
   });
+
+  it('retries more than once for transient fresh-start stdin failures', async () => {
+    const { CodexProvider } = await import('../codex-provider.js');
+    const { PendingPermissions } = await import('../permission-gateway.js');
+    const provider = new CodexProvider(new PendingPermissions());
+
+    const oldMaxRetries = process.env.CTI_CODEX_FRESH_RETRIES;
+    process.env.CTI_CODEX_FRESH_RETRIES = '2';
+
+    try {
+      let startCalls = 0;
+      const failingThread = {
+        runStreamed: async () => {
+          throw new Error('Codex Exec exited with code 1: Reading prompt from stdin...');
+        },
+      };
+      const successThread = {
+        runStreamed: () => ({
+          events: (async function* () {
+            yield { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1, cached_input_tokens: 0 } };
+          })(),
+        }),
+      };
+
+      (provider as any).sdk = { Codex: class { constructor() {} } };
+      (provider as any).codex = {
+        startThread: () => {
+          startCalls += 1;
+          return startCalls <= 2 ? failingThread : successThread;
+        },
+      };
+
+      const stream = provider.streamChat({
+        prompt: 'stdin multi-retry test',
+        sessionId: 'stdin-multi-retry-session',
+      });
+
+      const chunks = await collectStream(stream);
+      const events = parseSSEChunks(chunks);
+      const errorEvent = events.find(e => e.type === 'error');
+      const resultEvent = events.find(e => e.type === 'result');
+
+      assert.equal(startCalls, 3, 'Should perform two fresh retries before succeeding');
+      assert.ok(!errorEvent, 'Successful multi-retry should not emit error');
+      assert.ok(resultEvent, 'Successful multi-retry should emit result');
+    } finally {
+      if (oldMaxRetries === undefined) {
+        delete process.env.CTI_CODEX_FRESH_RETRIES;
+      } else {
+        process.env.CTI_CODEX_FRESH_RETRIES = oldMaxRetries;
+      }
+    }
+  });
 });
 
 // ── Image input building tests ──────────────────────────────

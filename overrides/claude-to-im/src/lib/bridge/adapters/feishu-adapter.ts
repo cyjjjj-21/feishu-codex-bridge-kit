@@ -52,7 +52,7 @@ const MAX_FILE_UPLOAD_SIZE = 100 * 1024 * 1024;
 /** Supported local image extensions for outbound upload. */
 const SENDABLE_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.tiff', '.bmp', '.ico']);
 /** Heuristic labels that often precede a downloadable local path. */
-const ATTACHMENT_LABEL_RE = /^(?:.*?[，,;；]\s*)?(?:文件(?:已)?生成|文件路径|文件在这里|当前文件是|路径|附件|下载|保存(?:到)?|输出|截图(?:路径)?|file(?:\s+path)?|path|saved(?:\s+to)?|created(?:\s+at)?|generated(?:\s+at)?)\s*[:：]\s*(.+?)\s*$/i;
+const ATTACHMENT_LABEL_RE = /^(?:.*?[，,;；]\s*)?(?:文件(?:已)?生成|文件路径|文件在这里|当前文件是|路径|附件|下载|保存(?:到)?|输出|截图(?:路径)?|截图已经拿到了，保存在桌面|file(?:\s+path)?|path|saved(?:\s+to)?|created(?:\s+at)?|generated(?:\s+at)?)\s*[:：]\s*(.+?)\s*$/i;
 /** MIME type hints for Feishu file uploads. Unknown types fall back to "stream". */
 const FEISHU_FILE_TYPE_BY_EXT: Record<string, 'opus' | 'mp4' | 'pdf' | 'doc' | 'xls' | 'ppt' | 'stream'> = {
   '.mp4': 'mp4',

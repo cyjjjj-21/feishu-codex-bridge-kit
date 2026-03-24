@@ -130,8 +130,14 @@ describe('bridge-manager restart command helpers', () => {
   it('recognizes short restart status pings but not real follow-up tasks', () => {
     assert.equal(_testOnly.isRestartStatusQuery('你还在吗'), true);
     assert.equal(_testOnly.isRestartStatusQuery('在吗'), true);
+    assert.equal(_testOnly.isRestartStatusQuery('在吗？'), true);
+    assert.equal(_testOnly.isRestartStatusQuery('@codex 在吗？'), true);
+    assert.equal(_testOnly.isRestartStatusQuery('@机器人 在吗'), true);
+    assert.equal(_testOnly.isRestartStatusQuery('你好'), true);
     assert.equal(_testOnly.isRestartStatusQuery('hello'), true);
+    assert.equal(_testOnly.isRestartStatusQuery('are you there?'), true);
     assert.equal(_testOnly.isRestartStatusQuery('帮我继续改刚才那个图'), false);
+    assert.equal(_testOnly.isRestartStatusQuery('@codex 帮我继续改刚才那个图'), false);
   });
 });
 
