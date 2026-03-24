@@ -58,6 +58,7 @@ describe('bridge-manager restart command helpers', () => {
     const lines = _testOnly.getCommandHelpLines();
 
     assert.ok(lines.some((line: string) => line.includes('/bridge-restart')));
+    assert.ok(lines.some((line: string) => line.includes('/skip')));
   });
 
   it('builds a detached daemon restart plan that stops then starts the bridge', () => {
@@ -131,6 +132,15 @@ describe('bridge-manager restart command helpers', () => {
     assert.equal(_testOnly.isRestartStatusQuery('在吗'), true);
     assert.equal(_testOnly.isRestartStatusQuery('hello'), true);
     assert.equal(_testOnly.isRestartStatusQuery('帮我继续改刚才那个图'), false);
+  });
+});
+
+describe('bridge-manager manual-step skip intent', () => {
+  it('treats Chinese stop/cancel phrases as skip intent', () => {
+    assert.equal(_testOnly.isSkipMessage('停止'), true);
+    assert.equal(_testOnly.isSkipMessage('终止'), true);
+    assert.equal(_testOnly.isSkipMessage('取消这步'), true);
+    assert.equal(_testOnly.isSkipMessage('继续'), false);
   });
 });
 

@@ -85,6 +85,7 @@ function getCommandHelpLines(): string[] {
     '/status - Show current status',
     '/sessions - List recent sessions',
     '/stop - Stop current session',
+    '/skip - Skip pending manual step and start fresh',
     '/bridge-restart - Restart bridge daemon',
     '/perm allow|allow_session|deny &lt;id&gt; - Respond to permission request',
     '1/2/3 - Quick permission reply (Feishu/QQ, single pending)',
@@ -630,10 +631,10 @@ function isContinueMessage(text: string): boolean {
 function isSkipMessage(text: string): boolean {
   const normalized = normalizeIntentText(text);
   if (!normalized) return false;
-  if (normalized.length <= 16 && /^(跳过|跳过吧|skip|skip it|pass|cancel this|算了)$/.test(normalized)) {
+  if (normalized.length <= 16 && /^(跳过|跳过吧|skip|skip it|pass|cancel this|算了|停止|终止|取消|abort|cancel)$/.test(normalized)) {
     return true;
   }
-  return /(?:跳过这步|跳过当前|skip this|skip current|不用继续|不继续了|先跳过|先略过)/.test(normalized);
+  return /(?:跳过这步|跳过当前|skip this|skip current|不用继续|不继续了|先跳过|先略过|停止这步|终止这步|取消这步|abort this|cancel this step)/.test(normalized);
 }
 
 function isRestartStatusQuery(text: string): boolean {
@@ -1393,16 +1394,26 @@ async function handleMessage(
   // Regular message — route to conversation engine
   const binding = router.resolve(msg.address);
   const manualState = getState().manualInterventions.get(binding.codepilotSessionId);
-  const shouldResumeManualStep = !!manualState
-    && manualState.chatId === msg.address.chatId
+  const hasPendingManualStep = !!manualState
+    && manualState.chatId === msg.address.chatId;
+  const shouldResumeManualStep = hasPendingManualStep
     && isContinueMessage(rawText);
-  const shouldSkipManualStep = !!manualState
-    && manualState.chatId === msg.address.chatId
+  const shouldSkipManualStep = hasPendingManualStep
     && isSkipMessage(rawText);
+  const shouldAutoSkipPendingManualStep = hasPendingManualStep
+    && !shouldResumeManualStep
+    && !shouldSkipManualStep;
 
   if (shouldSkipManualStep) {
     getState().manualInterventions.delete(binding.codepilotSessionId);
     resetSessionRuntime(binding);
+    if (binding.id) {
+      try {
+        router.updateBinding(binding.id, { sdkSessionId: '' });
+      } catch {
+        // best effort
+      }
+    }
     await deliver(adapter, {
       address: msg.address,
       text: '已跳过当前挂起的人工介入步骤。你可以直接发下一条任务，我会按新上下文继续处理。',
@@ -1411,6 +1422,24 @@ async function handleMessage(
     }, { sessionId: binding.codepilotSessionId });
     ack();
     return;
+  }
+
+  if (shouldAutoSkipPendingManualStep) {
+    getState().manualInterventions.delete(binding.codepilotSessionId);
+    resetSessionRuntime(binding);
+    if (binding.id) {
+      try {
+        router.updateBinding(binding.id, { sdkSessionId: '' });
+      } catch {
+        // best effort
+      }
+    }
+    await deliver(adapter, {
+      address: msg.address,
+      text: '检测到你发送了新任务，已自动跳过之前挂起的人工步骤，并按新上下文继续处理。',
+      parseMode: 'plain',
+      replyToMessageId: msg.messageId,
+    }, { sessionId: binding.codepilotSessionId });
   }
 
   // Notify adapter that message processing is starting (e.g., typing indicator)
@@ -1846,6 +1875,26 @@ async function handleCommand(
       break;
     }
 
+    case '/skip': {
+      const binding = router.resolve(msg.address);
+      const st = getState();
+      const manualState = st.manualInterventions.get(binding.codepilotSessionId);
+      const hadPending = !!manualState && manualState.chatId === msg.address.chatId;
+      st.manualInterventions.delete(binding.codepilotSessionId);
+      resetSessionRuntime(binding);
+      if (binding.id) {
+        try {
+          router.updateBinding(binding.id, { sdkSessionId: '' });
+        } catch {
+          // best effort
+        }
+      }
+      response = hadPending
+        ? '已跳过当前挂起的人工介入步骤。你可以直接发下一条任务，我会按新上下文继续处理。'
+        : '当前没有挂起的人工介入步骤。我已清理会话上下文，你可以直接发下一条任务。';
+      break;
+    }
+
     case '/bridge-restart': {
       response = formatBridgeRestartStartedMessage();
       postResponseAction = async () => {
@@ -1935,6 +1984,7 @@ export const _testOnly = {
   computeTaskTimeoutMs,
   buildFeishuFinalDeliveryPayload,
   getCommandHelpLines,
+  isSkipMessage,
   buildBridgeRestartPlan,
   getBridgeRestartNoticePath,
   persistPendingBridgeRestartNotice,
