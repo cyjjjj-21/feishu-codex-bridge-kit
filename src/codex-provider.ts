@@ -60,6 +60,21 @@ function shouldPassModelToCodex(): boolean {
   return process.env.CTI_CODEX_PASS_MODEL === 'true';
 }
 
+function resolveCodexPathOverride(): string | undefined {
+  const explicit = process.env.CTI_CODEX_PATH?.trim();
+  const appBundled = '/Applications/Codex.app/Contents/Resources/codex';
+  const candidates = [explicit, appBundled].filter((v): v is string => !!v);
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      // ignore invalid candidate path
+    }
+  }
+  return undefined;
+}
+
 function getSandboxMode(): string | undefined {
   const value = process.env.CTI_CODEX_SANDBOX_MODE?.trim();
   if (!value) return undefined;
@@ -167,11 +182,13 @@ export class CodexProvider implements LLMProvider {
       || process.env.OPENAI_API_KEY
       || undefined;
     const baseUrl = process.env.CTI_CODEX_BASE_URL || undefined;
+    const codexPathOverride = resolveCodexPathOverride();
 
     const CodexClass = this.sdk.Codex;
     this.codex = new CodexClass({
       ...(apiKey ? { apiKey } : {}),
       ...(baseUrl ? { baseUrl } : {}),
+      ...(codexPathOverride ? { codexPathOverride } : {}),
     });
 
     return { sdk: this.sdk, codex: this.codex };
