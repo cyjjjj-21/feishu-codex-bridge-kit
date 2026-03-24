@@ -108,6 +108,14 @@ function shouldRetryFreshThread(message: string): boolean {
   );
 }
 
+function shouldRetryFreshStart(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('reading prompt from stdin') ||
+    lower.includes('codex exec exited with code 1')
+  );
+}
+
 function summarizeCommand(command: string): string {
   const normalized = command.trim().replace(/\s+/g, ' ');
   if (!normalized) return 'command';
@@ -331,8 +339,16 @@ export class CodexProvider implements LLMProvider {
               } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 shouldResetRuntime = true;
-                if (savedThreadId && !retryFresh && !sawAnyEvent && shouldRetryFreshThread(message)) {
-                  console.warn('[codex-provider] Resume failed, retrying with a fresh thread:', message);
+                const canRetryFresh =
+                  !retryFresh
+                  && !sawAnyEvent
+                  && (
+                    (savedThreadId ? shouldRetryFreshThread(message) : shouldRetryFreshStart(message))
+                  );
+
+                if (canRetryFresh) {
+                  const reason = savedThreadId ? 'Resume failed' : 'Fresh start failed';
+                  console.warn(`[codex-provider] ${reason}, retrying once with a fresh thread:`, message);
                   savedThreadId = undefined;
                   retryFresh = true;
                   continue;
