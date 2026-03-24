@@ -264,11 +264,17 @@ export class CodexProvider implements LLMProvider {
               }
 
               let sawAnyEvent = false;
+              let hasMeaningfulProgress = false;
               try {
                 const { events } = await thread.runStreamed(input);
 
                 for await (const event of events) {
                   sawAnyEvent = true;
+                  if (event.type !== 'thread.started' && event.type !== 'turn.started') {
+                    // Only startup lifecycle events were seen; treat the turn as
+                    // still safe to retry if the CLI exits with stdin-read error.
+                    hasMeaningfulProgress = true;
+                  }
                   if (params.abortController?.signal.aborted) {
                     shouldResetRuntime = true;
                     break;
@@ -341,7 +347,7 @@ export class CodexProvider implements LLMProvider {
                 shouldResetRuntime = true;
                 const canRetryFresh =
                   !retryFresh
-                  && !sawAnyEvent
+                  && (!sawAnyEvent || !hasMeaningfulProgress)
                   && (
                     (savedThreadId ? shouldRetryFreshThread(message) : shouldRetryFreshStart(message))
                   );

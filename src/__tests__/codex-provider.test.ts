@@ -491,6 +491,52 @@ describe('CodexProvider', () => {
     assert.ok(!errorEvent, 'Retry success should not emit error');
     assert.ok(resultEvent, 'Retry success should emit result');
   });
+
+  it('retries when only startup events were seen before stdin-read failure', async () => {
+    const { CodexProvider } = await import('../codex-provider.js');
+    const { PendingPermissions } = await import('../permission-gateway.js');
+    const provider = new CodexProvider(new PendingPermissions());
+
+    let startCalls = 0;
+    const failingThread = {
+      runStreamed: () => ({
+        events: (async function* () {
+          yield { type: 'thread.started', thread_id: 'tmp-thread' };
+          yield { type: 'turn.started' };
+          throw new Error('Codex Exec exited with code 1: Reading prompt from stdin...');
+        })(),
+      }),
+    };
+    const successThread = {
+      runStreamed: () => ({
+        events: (async function* () {
+          yield { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1, cached_input_tokens: 0 } };
+        })(),
+      }),
+    };
+
+    (provider as any).sdk = { Codex: class { constructor() {} } };
+    (provider as any).codex = {
+      startThread: () => {
+        startCalls += 1;
+        return startCalls === 1 ? failingThread : successThread;
+      },
+    };
+
+    const stream = provider.streamChat({
+      prompt: 'startup-event retry test',
+      sessionId: 'startup-event-retry-session',
+    });
+
+    const chunks = await collectStream(stream);
+    const events = parseSSEChunks(chunks);
+    const errorEvent = events.find(e => e.type === 'error');
+    const resultEvent = events.find(e => e.type === 'result');
+
+    assert.equal(startCalls, 2, 'Should retry when only startup events happened before failure');
+    assert.ok(!errorEvent, 'Retry success should not emit error');
+    assert.ok(resultEvent, 'Retry success should emit result');
+  });
 });
 
 // ── Image input building tests ──────────────────────────────
