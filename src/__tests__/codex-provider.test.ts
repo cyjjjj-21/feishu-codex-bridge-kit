@@ -357,6 +357,49 @@ describe('CodexProvider', () => {
     }
   });
 
+  it('honors CTI_CODEX_APPROVAL_POLICY override when set', async () => {
+    const old = process.env.CTI_CODEX_APPROVAL_POLICY;
+    process.env.CTI_CODEX_APPROVAL_POLICY = 'never';
+    try {
+      const { CodexProvider } = await import('../codex-provider.js');
+      const { PendingPermissions } = await import('../permission-gateway.js');
+      const provider = new CodexProvider(new PendingPermissions());
+
+      let capturedStartOptions: Record<string, unknown> | undefined;
+      const mockThread = {
+        runStreamed: () => ({
+          events: (async function* () {
+            yield { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1, cached_input_tokens: 0 } };
+          })(),
+        }),
+      };
+
+      (provider as any).sdk = { Codex: class { constructor() {} } };
+      (provider as any).codex = {
+        startThread: (opts: Record<string, unknown>) => {
+          capturedStartOptions = opts;
+          return mockThread;
+        },
+      };
+
+      const stream = provider.streamChat({
+        prompt: 'approval override test',
+        sessionId: 'approval-override-session',
+        permissionMode: 'acceptEdits',
+      });
+
+      await collectStream(stream);
+
+      assert.equal(capturedStartOptions?.approvalPolicy, 'never');
+    } finally {
+      if (old === undefined) {
+        delete process.env.CTI_CODEX_APPROVAL_POLICY;
+      } else {
+        process.env.CTI_CODEX_APPROVAL_POLICY = old;
+      }
+    }
+  });
+
   it('retries with fresh thread when resume fails before any events', async () => {
     const { CodexProvider } = await import('../codex-provider.js');
     const { PendingPermissions } = await import('../permission-gateway.js');

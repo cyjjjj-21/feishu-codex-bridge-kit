@@ -42,6 +42,11 @@ type ThreadInstance = any;
  * - 'default' (ask mode) → 'on-request'
  */
 function toApprovalPolicy(permissionMode?: string): string {
+  const override = process.env.CTI_CODEX_APPROVAL_POLICY?.trim();
+  if (override === 'never' || override === 'on-request' || override === 'on-failure' || override === 'untrusted') {
+    return override;
+  }
+
   switch (permissionMode) {
     case 'acceptEdits': return 'on-failure';
     case 'plan': return 'on-request';
