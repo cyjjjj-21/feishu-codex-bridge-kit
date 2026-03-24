@@ -494,6 +494,40 @@ describe('CodexProvider image input', () => {
     assert.equal(capturedInput, 'Hello');
   });
 
+  it('uses a non-empty fallback prompt when upstream prompt is blank', async () => {
+    const { CodexProvider } = await import('../codex-provider.js');
+    const { PendingPermissions } = await import('../permission-gateway.js');
+    const provider = new CodexProvider(new PendingPermissions());
+
+    let capturedInput: unknown;
+    const mockThread = {
+      runStreamed: (input: unknown) => {
+        capturedInput = input;
+        return {
+          events: (async function* () {
+            yield { type: 'turn.completed', usage: { input_tokens: 0, output_tokens: 0 } };
+          })(),
+        };
+      },
+    };
+    (provider as any).sdk = {
+      Codex: class { constructor() {} },
+    };
+    (provider as any).codex = {
+      startThread: () => mockThread,
+    };
+
+    const stream = provider.streamChat({
+      prompt: '   \n\t  ',
+      sessionId: 'blank-prompt-session',
+    });
+
+    await collectStream(stream);
+
+    assert.equal(typeof capturedInput, 'string');
+    assert.ok((capturedInput as string).trim().length > 0, 'Fallback prompt should not be empty');
+  });
+
   it('builds local_image input with multiple images, ignoring non-image files', async () => {
     const { CodexProvider } = await import('../codex-provider.js');
     const { PendingPermissions } = await import('../permission-gateway.js');
@@ -582,6 +616,45 @@ describe('CodexProvider image input', () => {
     } finally {
       fs.unlinkSync(stablePath);
     }
+  });
+
+  it('uses a non-empty text part when image input prompt is blank', async () => {
+    const { CodexProvider } = await import('../codex-provider.js');
+    const { PendingPermissions } = await import('../permission-gateway.js');
+    const provider = new CodexProvider(new PendingPermissions());
+
+    let capturedInput: unknown;
+    const mockThread = {
+      runStreamed: (input: unknown) => {
+        capturedInput = input;
+        return {
+          events: (async function* () {
+            yield { type: 'turn.completed', usage: { input_tokens: 0, output_tokens: 0 } };
+          })(),
+        };
+      },
+    };
+    (provider as any).sdk = {
+      Codex: class { constructor() {} },
+    };
+    (provider as any).codex = {
+      startThread: () => mockThread,
+    };
+
+    const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+
+    const stream = provider.streamChat({
+      prompt: '   ',
+      sessionId: 'blank-image-prompt-session',
+      files: [makeFile('image/png', pngBase64, 'blank.png')],
+    });
+
+    await collectStream(stream);
+
+    assert.ok(Array.isArray(capturedInput), 'Input should be an array for image input');
+    const parts = capturedInput as Array<Record<string, string>>;
+    assert.equal(parts[0].type, 'text');
+    assert.ok(parts[0].text.trim().length > 0, 'Image text part should use fallback prompt');
   });
 });
 

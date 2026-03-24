@@ -109,6 +109,12 @@ function summarizeCommand(command: string): string {
   return normalized.length > 120 ? `${normalized.slice(0, 117)}...` : normalized;
 }
 
+function ensureNonEmptyPrompt(prompt: string): string {
+  if (prompt.trim()) return prompt;
+  // Codex CLI exits early on empty stdin prompts in exec mode.
+  return 'Continue from the latest context and provide a concise, actionable response.';
+}
+
 export class CodexProvider implements LLMProvider {
   private sdk: CodexModule | null = null;
   private codex: CodexInstance | null = null;
@@ -205,10 +211,12 @@ export class CodexProvider implements LLMProvider {
               f => f.type.startsWith('image/')
             ) ?? [];
 
+            const promptText = ensureNonEmptyPrompt(params.prompt);
+
             let input: string | Array<Record<string, string>>;
             if (imageFiles.length > 0) {
               const parts: Array<Record<string, string>> = [
-                { type: 'text', text: params.prompt },
+                { type: 'text', text: promptText },
               ];
               for (const file of imageFiles) {
                 const stablePath = file.filePath?.trim();
@@ -225,7 +233,7 @@ export class CodexProvider implements LLMProvider {
               }
               input = parts;
             } else {
-              input = params.prompt;
+              input = promptText;
             }
 
             let retryFresh = false;

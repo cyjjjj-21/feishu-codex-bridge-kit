@@ -165,6 +165,21 @@ describe('bridge-manager Feishu final delivery shaping', () => {
     assert.equal(shaped.text, '图里是 FaceTime 的预览视图。');
   });
 
+  it('extracts attachments even when streamedText is empty (non-preview fallback)', () => {
+    const screenshotName = `bridge-fallback-${Date.now()}.png`;
+    const screenshotPath = path.join(os.homedir(), 'Desktop', screenshotName);
+    tempArtifacts.push(screenshotPath);
+    fs.writeFileSync(screenshotPath, 'fake png payload');
+
+    const shaped = _testOnly.buildFeishuFinalDeliveryPayload(
+      `最新截图已经拿到，文件在这里：[${screenshotName}](${screenshotPath})\n\n后续说明内容。`,
+      '',
+    );
+
+    assert.deepEqual(shaped.attachments, [{ path: screenshotPath, kind: 'image' }]);
+    assert.equal(shaped.text, '后续说明内容。');
+  });
+
   it('formats a fixed streaming completion marker', () => {
     assert.equal(
       _testOnly.formatStreamingCompletionMessage(),

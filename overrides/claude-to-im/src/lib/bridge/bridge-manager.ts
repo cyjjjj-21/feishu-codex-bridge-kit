@@ -382,11 +382,19 @@ async function deliverResponse(
     return { ok: true };
   }
   if (adapter.channelType === 'feishu') {
-    // Feishu: pass markdown through for adapter to format as post/card
+    // Feishu: pre-shape full response so local attachment paths are extracted
+    // before chunking; otherwise an attachment link in an earlier chunk can be
+    // lost when only the last chunk carries message.attachments.
+    const shaped = buildFeishuFinalDeliveryPayload(responseText, '');
+    const outboundText = shaped.text || (shaped.attachments.length > 0 ? '' : responseText);
+    if (!outboundText && shaped.attachments.length === 0) {
+      return { ok: true };
+    }
     return deliver(adapter, {
       address,
-      text: responseText,
+      text: outboundText,
       parseMode: 'Markdown',
+      attachments: shaped.attachments.length > 0 ? shaped.attachments : undefined,
       replyToMessageId,
     }, { sessionId });
   }
